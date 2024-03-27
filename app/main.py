@@ -5,6 +5,10 @@ vitesse_du_jeu = 10
 size = 1.5
 
 # Initialisation de Pygame
+import pygame
+import random
+
+# Initialisation de Pygame
 pygame.init()
 
 # Dimensions de la fenêtre du jeu
@@ -15,6 +19,14 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
+
+# Chargement des images du serpent
+head_image = pygame.image.load('snake_head.png')
+body_image = pygame.image.load('snake_body.png')
+
+# Redimensionnement des images pour correspondre à la taille du serpent
+head_image = pygame.transform.scale(head_image, (10, 10))
+body_image = pygame.transform.scale(body_image, (10, 10))
 
 # Configuration de la fenêtre
 window = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -77,14 +89,10 @@ while not game_over:
     if direction == 'RIGHT':
         snake_pos[0] += 10
 
-    # Augmenter la longueur du serpent
+    # Faire avancer le serpent
     snake_body.insert(0, list(snake_pos))
-    if snake_pos[0] == food_pos[0] and snake_pos[1] == food_pos[1]:
-        score += 1
-        food_spawn = False
-    else:
-        snake_body.pop()
-
+    snake_body.pop()
+    
     # Réapparition de la nourriture
     if not food_spawn:
         food_pos = [random.randrange(1, (WIDTH//10)) * 10, random.randrange(1, (HEIGHT//10)) * 10]
@@ -97,8 +105,19 @@ while not game_over:
 
     # Dessiner les éléments du jeu sur l'écran
     window.fill(BLACK)
-    for pos in snake_body:
-        pygame.draw.rect(window, WHITE, pygame.Rect(pos[0], pos[1], 10, 10))
+    for index, pos in enumerate(snake_body):
+        if pos == snake_pos:  # Dessiner la tête du serpent
+            if direction == 'UP':
+                rotated_head = pygame.transform.rotate(head_image, 0)
+            elif direction == 'DOWN':
+                rotated_head = pygame.transform.rotate(head_image, 180)
+            elif direction == 'LEFT':
+                rotated_head = pygame.transform.rotate(head_image, 90)
+            elif direction == 'RIGHT':
+                rotated_head = pygame.transform.rotate(head_image, 270)
+            window.blit(rotated_head, (pos[0], pos[1]))
+        else:  # Dessiner le corps du serpent
+            window.blit(body_image, (pos[0], pos[1]))
     pygame.draw.rect(window, RED, pygame.Rect(food_pos[0], food_pos[1], 10, 10))
     pygame.draw.rect(window, BLUE, pygame.Rect(bomb_pos[0], bomb_pos[1], 10, 10))
 
@@ -115,11 +134,14 @@ while not game_over:
 
     # Gérer les collisions avec la nourriture
     if snake_pos[0] == food_pos[0] and snake_pos[1] == food_pos[1]:
+        snake_body.insert(0, list(snake_pos))
         score += 1
         food_spawn = False
 
     # Gérer les collisions avec la bombe
     if snake_pos[0] == bomb_pos[0] and snake_pos[1] == bomb_pos[1]:
+        for _ in range(50):  # Ajouter 10 nouvelles positions de queue
+            snake_body.append(list(snake_body[-1]))
         score -= 1
         bomb_spawn = False
 
