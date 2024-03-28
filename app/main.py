@@ -4,6 +4,7 @@ import itertools
 from itertools import product
 import numpy as np
 from multiprocessing import Pool, cpu_count
+import json
 
 ############# PARAMETRES DU JEU
 vitesse_du_jeu = 50
@@ -259,13 +260,14 @@ def draw_bombs(bombs):
     for bomb in bombs:
         pygame.draw.rect(window, BLUE, pygame.Rect(bomb[0], bomb[1], BLOCK_SIZE, BLOCK_SIZE))
     
-def game_loop(learner):
+def game_loop(learner,display = False):
     game_over = False
     duree = 0
     # Configuration de la fenêtre
-    global window
-    window = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Snake Game")
+    if display:
+        global window
+        window = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Snake Game")
     # Horloge pour contrôler la vitesse du jeu
     clock = pygame.time.Clock()
     # Variables du jeu
@@ -278,9 +280,10 @@ def game_loop(learner):
     score = 0
     while not game_over:
         duree +=1
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                game_over = True
+        if display:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    game_over = True
         action = learner.act(snake_body,food_pos,bombs)
 
         # Vérifier si la direction est valide
@@ -327,22 +330,23 @@ def game_loop(learner):
                 bombs.append(new_b) 
 
         # Dessiner les éléments du jeu sur l'écran
-        window.fill(BLACK)
-        for index, pos in enumerate(snake_body):
-            if pos == snake_pos:  # Dessiner la tête du serpent
-                if direction == 'UP':
-                    rotated_head = pygame.transform.rotate(head_image, 0)
-                elif direction == 'DOWN':
-                    rotated_head = pygame.transform.rotate(head_image, 180)
-                elif direction == 'LEFT':
-                    rotated_head = pygame.transform.rotate(head_image, 90)
-                elif direction == 'RIGHT':
-                    rotated_head = pygame.transform.rotate(head_image, 270)
-                window.blit(rotated_head, (pos[0], pos[1]))
-            else:  # Dessiner le corps du serpent
-                window.blit(body_image, (pos[0], pos[1]))
-        pygame.draw.rect(window, RED, pygame.Rect(food_pos[0], food_pos[1], BLOCK_SIZE, BLOCK_SIZE))
-        draw_bombs(bombs)
+        if display:
+            window.fill(BLACK)
+            for index, pos in enumerate(snake_body):
+                if pos == snake_pos:  # Dessiner la tête du serpent
+                    if direction == 'UP':
+                        rotated_head = pygame.transform.rotate(head_image, 0)
+                    elif direction == 'DOWN':
+                        rotated_head = pygame.transform.rotate(head_image, 180)
+                    elif direction == 'LEFT':
+                        rotated_head = pygame.transform.rotate(head_image, 90)
+                    elif direction == 'RIGHT':
+                        rotated_head = pygame.transform.rotate(head_image, 270)
+                    window.blit(rotated_head, (pos[0], pos[1]))
+                else:  # Dessiner le corps du serpent
+                    window.blit(body_image, (pos[0], pos[1]))
+            pygame.draw.rect(window, RED, pygame.Rect(food_pos[0], food_pos[1], BLOCK_SIZE, BLOCK_SIZE))
+            draw_bombs(bombs)
 
         # Gérer les collisions avec les bords de l'écran
         if snake_pos[0] < 0 or snake_pos[0] > WIDTH-BLOCK_SIZE:
@@ -379,9 +383,10 @@ def game_loop(learner):
         if duree > ((WIDTH + HEIGHT)/BLOCK_SIZE)*2:
             game_over = True
             reason = "temps écoulé"
-
-        show_score(1, WHITE, 'Consolas', 20, score)
-        pygame.display.update()
+            
+        if display:
+            show_score(1, WHITE, 'Consolas', 20, score)
+            pygame.display.update()
         learner.update_qvalues(partie_terminee=game_over, bombe_touchee=bombe_touchee)
         clock.tick(vitesse_du_jeu)
     return score, reason
@@ -391,7 +396,7 @@ def experience(Nreps, epsilon_list, lr_list, discount_list, rewards_game_over, r
     print(len(epsilon_list)*len(lr_list)*len(discount_list)*len(rewards_game_over)*len(rewards_food)*len(rewards_bomb)*len(rewards_good_move)*len(rewards_bad_move))
     for epsilon, lr, discount,reward_game_over,reward_food, reward_bomb,reward_good_move,reward_bad_move in product(epsilon_list, lr_list, discount_list,rewards_game_over, rewards_food, rewards_bomb, rewards_good_move, rewards_bad_move):
         result = run_experiment(Nreps, epsilon, lr, discount,reward_game_over,reward_food,reward_bomb,reward_good_move,reward_bad_move)
-        results[(epsilon, lr, discount,reward_game_over,reward_food,reward_bomb,reward_good_move,reward_bad_move)] = result
+        results[str((epsilon, lr, discount,reward_game_over,reward_food,reward_bomb,reward_good_move,reward_bad_move))] = result
     return results
 
 
@@ -402,7 +407,7 @@ def experience_multi(Nreps, epsilon_list, lr_list, discount_list, rewards_game_o
     hyperparams_combinations = product(epsilon_list, lr_list, discount_list, rewards_game_over, rewards_food, rewards_bomb, rewards_good_move, rewards_bad_move)
     for epsilon, lr, discount, reward_game_over, reward_food, reward_bomb, reward_good_move, reward_bad_move in hyperparams_combinations:
         result = pool.apply_async(run_experiment, args=(Nreps, epsilon, lr, discount, reward_game_over, reward_food, reward_bomb, reward_good_move, reward_bad_move))
-        results[(epsilon, lr, discount, reward_game_over, reward_food, reward_bomb, reward_good_move, reward_bad_move)] = result
+        results[str((epsilon, lr, discount, reward_game_over, reward_food, reward_bomb, reward_good_move, reward_bad_move))] = result
     pool.close()
     pool.join()
     results = {key: result.get() for key, result in results.items()}
@@ -433,29 +438,41 @@ def run_experiment(Nreps, epsilon, lr, discount,reward_game_over,reward_food,rew
         game_count += 1
     return np.mean(scores)
 
-if multi_coeur:
-    res = experience_multi(Nreps=Nreps,
-                 epsilon_list=epsilon_list,
-                 lr_list=lr_list,
-                 discount_list=discount_list,
-                 rewards_game_over=rewards_game_over,
-                 rewards_food=rewards_food,
-                 rewards_bomb=rewards_bomb,
-                 rewards_good_move=rewards_good_move,
-                 rewards_bad_move=rewards_bad_move)
-else:
-    res = experience(Nreps=Nreps,
-                 epsilon_list=epsilon_list,
-                 lr_list=lr_list,
-                 discount_list=discount_list,
-                 rewards_game_over=rewards_game_over,
-                 rewards_food=rewards_food,
-                 rewards_bomb=rewards_bomb,
-                 rewards_good_move=rewards_good_move,
-                 rewards_bad_move=rewards_bad_move)
-    
 
-key_max = max(res, key=res.get)
-print("Clé associée au meilleur score moyen:", key_max)
-print("score associé:", res[key_max])
+if __name__ == "__main__":
+
+
+    if multi_coeur:
+        res = experience_multi(Nreps=Nreps,
+                    epsilon_list=epsilon_list,
+                    lr_list=lr_list,
+                    discount_list=discount_list,
+                    rewards_game_over=rewards_game_over,
+                    rewards_food=rewards_food,
+                    rewards_bomb=rewards_bomb,
+                    rewards_good_move=rewards_good_move,
+                    rewards_bad_move=rewards_bad_move)
+    else:
+        res = experience(Nreps=Nreps,
+                    epsilon_list=epsilon_list,
+                    lr_list=lr_list,
+                    discount_list=discount_list,
+                    rewards_game_over=rewards_game_over,
+                    rewards_food=rewards_food,
+                    rewards_bomb=rewards_bomb,
+                    rewards_good_move=rewards_good_move,
+                    rewards_bad_move=rewards_bad_move)
+        
+
+    key_max = max(res, key=res.get)
+    print("Clé associée au meilleur score moyen:", key_max)
+    print("score associé:", res[key_max])
+    
+    
+    filename = "data.json"
+
+    # Enregistrer le dictionnaire dans un fichier JSON
+    with open(filename, 'w') as file:
+        json.dump(res, file)
+
 
