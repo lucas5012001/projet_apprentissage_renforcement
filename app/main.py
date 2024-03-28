@@ -4,7 +4,7 @@ import itertools
 import math
 ############# Parametres
 vitesse_du_jeu = 500000
-max_bombs = 20
+max_bombs = 1
 penalite_bombe = 10
 max_partie = 5000
 WIDTH = 600
@@ -72,8 +72,8 @@ class Learner:
         self.display_height = display_height
         self.block_size = block_size
         self.epsilon = 0.1
-        self.lr = 0.7
-        self.discount = .5
+        self.lr = 0.3
+        self.discount = .9
         self.qvalues = q_values.states
         self.history = []
         self.actions = {0: 'LEFT', 1: 'RIGHT', 2: 'UP', 3: 'DOWN'}
@@ -106,23 +106,14 @@ class Learner:
                 y1_food = s0.distance_food[1]
                 x2_food = s1.distance_food[0]
                 y2_food = s1.distance_food[1]
-                x1_bomb = s0.distance_bomb[0]
-                y1_bomb = s0.distance_bomb[1]
-                x2_bomb = s1.distance_bomb[0]
-                y2_bomb = s1.distance_bomb[1]
                 if s0.food != s1.food:
-                    reward = 10
+                    reward = 1
                 elif bombe_touchee:
                     reward = -1
                 elif abs(x1_food) > abs(x2_food) or abs(y1_food) > abs(y2_food):
                     reward = 0.1
-                #elif (type(x1_bomb) == int or type(x1_bomb) == float) and (type(x2_bomb) == int or type(x2_bomb) == float):
-                #    if abs(x1_bomb) > abs(x2_bomb) or abs(y1_bomb) > abs(y2_bomb):
-                #        reward = -0.1
-                #    else:
-                #        reward = -0.05
                 else:
-                    reward = -0.1
+                    reward = -0.01
                  
 
                 state_str = self.get_state_str(s0)
@@ -155,7 +146,7 @@ class Learner:
                 surrounding_list.append('1')
             elif sq[0] >= self.display_width or sq[1] >= self.display_height:
                 surrounding_list.append('1')
-            elif sq in snake[:-1]:
+            elif sq in snake[1:]:
                 surrounding_list.append('1')
             else:
                 surrounding_list.append('0')
