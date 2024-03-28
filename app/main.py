@@ -3,9 +3,9 @@ import random
 import itertools
 import math
 ############# Parametres
-vitesse_du_jeu = 500000
-max_bombs = 1
-penalite_bombe = 10
+vitesse_du_jeu = 50
+max_bombs = 10
+penalite_bombe = 1
 max_partie = 5000
 WIDTH = 600
 HEIGHT = 400
@@ -71,9 +71,9 @@ class Learner:
         self.display_width = display_width
         self.display_height = display_height
         self.block_size = block_size
-        self.epsilon = 0.1
-        self.lr = 0.3
-        self.discount = .9
+        self.epsilon = 0.3
+        self.lr = 0.1
+        self.discount = .05
         self.qvalues = q_values.states
         self.history = []
         self.actions = {0: 'LEFT', 1: 'RIGHT', 2: 'UP', 3: 'DOWN'}
@@ -106,12 +106,25 @@ class Learner:
                 y1_food = s0.distance_food[1]
                 x2_food = s1.distance_food[0]
                 y2_food = s1.distance_food[1]
+                x1_bomb = s0.distance_bomb[0]
+                y1_bomb = s0.distance_bomb[1]
+                x2_bomb = s1.distance_bomb[0]
+                y2_bomb = s1.distance_bomb[1]
+                # si le serpent mange
                 if s0.food != s1.food:
                     reward = 1
+                # si le serpent touche une bombe
                 elif bombe_touchee:
-                    reward = -1
+                    reward = -10
+                # si le serpent se rapproche de la nourriture
                 elif abs(x1_food) > abs(x2_food) or abs(y1_food) > abs(y2_food):
                     reward = 0.1
+                # si le serpent s'éloigne des bombes
+                elif (type(x1_bomb) == float or type(x1_bomb) == int) and (type(x2_bomb) == float or type(x2_bomb) == int):
+                    if abs(x1_bomb) <= abs(x2_bomb) and abs(y1_bomb) <= abs(y2_bomb):
+                        reward = 0.1
+                    else:
+                        reward = -0.01
                 else:
                     reward = -0.01
                  
@@ -304,7 +317,7 @@ while game_count <= max_partie:
     if game_count > max_partie / 2:
         learner.epsilon = 0  
     else:
-        learner.epsilon = .4
+        learner.epsilon = .2
     score, reason = game_loop()
     print(f"Games: {game_count}; Score: {score}; Reason: {reason}") 
     if game_count == max_partie:
