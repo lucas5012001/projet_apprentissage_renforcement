@@ -1,15 +1,31 @@
 import pygame
 import random
 import itertools
-import math
-############# Parametres
+from itertools import product
+import numpy as np
+from multiprocessing import Pool, cpu_count
+
+############# PARAMETRES DU JEU
 vitesse_du_jeu = 50
 max_bombs = 10
 penalite_bombe = 1
-max_partie = 5000
 WIDTH = 600
 HEIGHT = 400
 BLOCK_SIZE = 10 
+########################
+
+############# HYPERPARAMETRES A TESTER
+multi_coeur = True
+##
+Nreps=2
+epsilon_list=[0.1]
+lr_list=[0.1]
+discount_list=[0.1]
+rewards_game_over=[-1000]
+rewards_food=[200]
+rewards_bomb=[-200]
+rewards_good_move=[1,0.1]
+rewards_bad_move=[-1,-0.1]
 ########################
 
 # Couleurs
@@ -28,107 +44,192 @@ body_image = pygame.transform.scale(body_image, (BLOCK_SIZE, BLOCK_SIZE))
 
 pygame.init()
 
-def closest_bomb(pos, bombs):
-    if not bombs:
-        return None
-    min_distance = math.inf
-    closest_bomb = None
-    for b in bombs:
-        distance = abs(b[0] - pos[0]) + abs(b[1] - pos[1])
-        if distance < min_distance:
-            min_distance = distance
-            closest_bomb = b
-    return closest_bomb
+def vue_serpent(snake, food, bombs):
+    head = snake[0]
+    poss = ["food","bomb","death"]
+    objs = ["death","death","death","death"]
+    touche = ["0","0","0","0"]
+    #droite
+    food_bomb_snake = [WIDTH,WIDTH,WIDTH]
+    if head[0] == WIDTH-BLOCK_SIZE:
+        touche[0] = "1"
+    else:
+        if food[1] == head[1]:
+            if food[0]-head[0] > 0:
+                food_bomb_snake[0] = abs(food[0]-head[0])/BLOCK_SIZE
+        for b in bombs:
+            if b[1] == head[1]:
+                if b[0] - head[0] > 0:
+                    food_bomb_snake[1] = abs(b[0] - head[0])/BLOCK_SIZE
+        for s in snake[1:]:
+            if s[1] == head[1]:
+                if s[0] - head[0] > 0:
+                    food_bomb_snake[2] = abs(s[0] - head[0])/BLOCK_SIZE
+        argm = np.argmin(food_bomb_snake)
+        minim = food_bomb_snake[argm]
+        if minim != WIDTH:
+            objs[0] = poss[argm]
+            if minim == 1:
+                touche[0] = "1"
+    #gauche
+    food_bomb_snake = [WIDTH,WIDTH,WIDTH]
+    if head[0] == 0:
+        touche[3] = "1"
+    else:
+        if food[1] == head[1]:
+            if food[0]-head[0] < 0:
+                food_bomb_snake[0] = abs(food[0]-head[0])/BLOCK_SIZE
+        for b in bombs:
+            if b[1] == head[1]:
+                if b[0] - head[0] < 0:
+                    food_bomb_snake[1] = abs(b[0] - head[0])/BLOCK_SIZE
+        for s in snake[1:]:
+            if s[1] == head[1]:
+                if s[0] - head[0] < 0:
+                    food_bomb_snake[2] = abs(s[0] - head[0])/BLOCK_SIZE
+        argm = np.argmin(food_bomb_snake)
+        minim = food_bomb_snake[argm]
+        if minim != WIDTH:
+            objs[3] = poss[argm]
+            if minim == 1:
+                touche[3] = "1"
+    #haut
+    food_bomb_snake = [HEIGHT,HEIGHT,HEIGHT]
+    if head[1] == HEIGHT - BLOCK_SIZE:
+        touche[2] = "1"
+    else:
+        if food[0] == head[0]:
+            if food[1]-head[1] > 0:
+                food_bomb_snake[0] = abs(food[1]-head[1])/BLOCK_SIZE
+        for b in bombs:
+            if b[0] == head[0]:
+                if b[1] - head[1] > 0:
+                    food_bomb_snake[1] = abs(b[1] - head[1])/BLOCK_SIZE
+        for s in snake[1:]:
+            if s[0] == head[0]:
+                if s[1] - head[1] > 0:
+                    food_bomb_snake[2] = abs(s[1] - head[1])/BLOCK_SIZE
+        argm = np.argmin(food_bomb_snake)
+        minim = food_bomb_snake[argm]
+        if minim != HEIGHT:
+            objs[2] = poss[argm]
+            if minim == 1:
+                touche[2] = "1"
+    #bas
+    food_bomb_snake = [HEIGHT,HEIGHT,HEIGHT]
+    if head[1] == 0:
+        touche[1] = "1"
+    else:
+        if food[0] == head[0]:
+            if food[1]-head[1] < 0:
+                food_bomb_snake[0] = abs(food[1]-head[1])/BLOCK_SIZE
+        for b in bombs:
+            if b[0] == head[0]:
+                if b[1] - head[1] < 0:
+                    food_bomb_snake[1] = abs(b[1] - head[1])/BLOCK_SIZE
+        for s in snake[1:]:
+            if s[0] == head[0]:
+                if s[1] - head[1] < 0:
+                    food_bomb_snake[2] = abs(s[1] - head[1])/BLOCK_SIZE
+        argm = np.argmin(food_bomb_snake)
+        minim = food_bomb_snake[argm]
+        if minim != HEIGHT:
+            objs[1] = poss[argm]
+            if minim == 1:
+                touche[1] = "1"
+    objs = "".join(objs)
+    touche = "".join(touche)    
+    return objs, touche   
+    
 
 class QValues:
     def __init__(self):
         sqs = [''.join(s) for s in list(itertools.product(*[['0','1']] * 4))]
+        what = [''.join(s) for s in list(itertools.product(*[['food','bomb','death']] * 4))] 
         widths = ['0','1','NA']
         heights = ['2','3','NA']
-        widths_b = ['0','1','NA',"no_bomb"]
-        heights_b = ['2','3','NA',"no_bomb"]
         self.states = {}
-        for i1 in widths:
-            for j1 in heights:
-                for i2 in widths_b:
-                    for j2 in heights_b:
+        for i in widths:
+            for j in heights:
                         for k in sqs:
-                            self.states[str((i1,j1,i2,j2,k))] = [0,0,0,0]
+                            for l in what:
+                                self.states[str((i,j,k,l))] = [0,0,0,0]
 q_values = QValues()
+q_values
 
 class GameState:
-    def __init__(self, distance_food, position_food, distance_bomb, position_bomb, surroundings, food, bomb):
+    def __init__(self, distance_food, position_food, objs, touche, food):
         self.distance_food = distance_food
         self.position_food = position_food
-        self.distance_bomb = distance_bomb
-        self.position_bomb = position_bomb
-        self.surroundings = surroundings
+        self.objs = objs
+        self.touche = touche
         self.food = food
-        self.bomb = bomb
 
 class Learner:
     def __init__(self, display_width, display_height, block_size):
         self.display_width = display_width
         self.display_height = display_height
         self.block_size = block_size
-        self.epsilon = 0.3
-        self.lr = 0.1
-        self.discount = .05
+        self.epsilon = 0.1
+        self.lr = 0.2
+        self.discount = .5
         self.qvalues = q_values.states
         self.history = []
         self.actions = {0: 'LEFT', 1: 'RIGHT', 2: 'UP', 3: 'DOWN'}
+        self.reward_game_over = -1000
+        self.reward_food = 200
+        self.reward_bomb = -200
+        self.reward_good_move = 0.1
+        self.reward_bad_move = -0.1
 
     def reset(self):
         self.history = []
 
     def act(self, snake, food, bombs):
         state = self.get_state(snake, food, bombs)
-        state_scores = self.qvalues[self.get_state_str(state)]
-        action_key = state_scores.index(max(state_scores))
+        state_str = self.get_state_str(state)
+        state_scores = self.qvalues[state_str]
+
+        # Choix de l'action selon epsilon-greedy
+        if random.random() < self.epsilon:
+            action_key = random.randint(0, len(self.actions) - 1)
+        else:
+            action_key = state_scores.index(max(state_scores))
+        
         action_val = self.actions[action_key]
         self.history.append({'state': state, 'action': action_key})
         return action_val
+
     
     def update_qvalues(self, partie_terminee, bombe_touchee):
         history = self.history[::-1]
-        for i, h in enumerate(history[:-1]):
-            if partie_terminee:
-                sN = history[0]['state']
-                aN = history[0]['action']
-                state_str = self.get_state_str(sN)
-                reward = -100
-                self.qvalues[state_str][aN] = (1 - self.lr) * self.qvalues[state_str][aN] + self.lr * reward
-            else:
-                s1 = h['state']
-                s0 = history[i + 1]['state']
-                a0 = history[i + 1]['action']
+        if partie_terminee:
+            sN = history[0]['state']
+            aN = history[0]['action']
+            state_str = self.get_state_str(sN)
+            reward = self.reward_game_over
+            self.qvalues[state_str][aN] = reward#(1 - self.lr) * self.qvalues[state_str][aN] + self.lr * reward
+            #print(self.qvalues[state_str][aN])
+        else :
+            if len(history)>1:
+                s1 = history[0]['state']
+                s0 = history[1]['state']
+                a0 = history[1]['action']
                 x1_food = s0.distance_food[0]
                 y1_food = s0.distance_food[1]
                 x2_food = s1.distance_food[0]
                 y2_food = s1.distance_food[1]
-                x1_bomb = s0.distance_bomb[0]
-                y1_bomb = s0.distance_bomb[1]
-                x2_bomb = s1.distance_bomb[0]
-                y2_bomb = s1.distance_bomb[1]
                 # si le serpent mange
                 if s0.food != s1.food:
-                    reward = 1
+                    reward = self.reward_food
                 # si le serpent touche une bombe
                 elif bombe_touchee:
-                    reward = -10
+                    reward = self.reward_bomb
                 # si le serpent se rapproche de la nourriture
                 elif abs(x1_food) > abs(x2_food) or abs(y1_food) > abs(y2_food):
-                    reward = 0.1
-                # si le serpent s'éloigne des bombes
-                elif (type(x1_bomb) == float or type(x1_bomb) == int) and (type(x2_bomb) == float or type(x2_bomb) == int):
-                    if abs(x1_bomb) <= abs(x2_bomb) and abs(y1_bomb) <= abs(y2_bomb):
-                        reward = 0.1
-                    else:
-                        reward = -0.01
+                    reward = self.reward_good_move
                 else:
-                    reward = -0.01
-                 
-
+                    reward = self.reward_bad_move
                 state_str = self.get_state_str(s0)
                 new_state_str = self.get_state_str(s1)
                 self.qvalues[state_str][a0] = (1 - self.lr) * (self.qvalues[state_str][a0]) + self.lr * (
@@ -136,38 +237,15 @@ class Learner:
                 
     def get_state(self, snake, food, bombs):
         snake_head = snake[0]
-        bomb = closest_bomb(snake_head,bombs)
+        objs, touche = vue_serpent(snake,food,bombs)
         dist_x_food = food[0] - snake_head[0]
         dist_y_food = food[1] - snake_head[1]
         pos_x_food = '1' if dist_x_food > 0 else '0' if dist_x_food < 0 else 'NA'
         pos_y_food = '3' if dist_y_food > 0 else '2' if dist_y_food < 0 else 'NA'
-        if bomb:
-            dist_x_bomb = bomb[0] - snake_head[0]
-            dist_y_bomb = bomb[1] - snake_head[1]
-            pos_x_bomb = '1' if dist_x_bomb > 0 else '0' if dist_x_bomb < 0 else 'NA'
-            pos_y_bomb = '3' if dist_y_bomb > 0 else '2' if dist_y_bomb < 0 else 'NA'
-        else :
-            dist_x_bomb = "no_bomb"
-            dist_y_bomb = "no_bomb"
-            pos_x_bomb = "no_bomb"
-            pos_y_bomb = "no_bomb"
-        sqs = [(snake_head[0] - self.block_size, snake_head[1]), (snake_head[0] + self.block_size, snake_head[1]),
-               (snake_head[0], snake_head[1] - self.block_size), (snake_head[0], snake_head[1] + self.block_size)]
-        surrounding_list = []
-        for sq in sqs:
-            if sq[0] < 0 or sq[1] < 0:
-                surrounding_list.append('1')
-            elif sq[0] >= self.display_width or sq[1] >= self.display_height:
-                surrounding_list.append('1')
-            elif sq in snake[1:]:
-                surrounding_list.append('1')
-            else:
-                surrounding_list.append('0')
-        surroundings = ''.join(surrounding_list)
-        return GameState((dist_x_food, dist_y_food), (pos_x_food, pos_y_food),(dist_x_bomb, dist_y_bomb), (pos_x_bomb, pos_y_bomb), surroundings, food, bomb)
+        return GameState((dist_x_food, dist_y_food), (pos_x_food, pos_y_food), objs, touche, food)
 
     def get_state_str(self, state):
-        return str((state.position_food[0], state.position_food[1],state.position_bomb[0], state.position_bomb[1], state.surroundings))
+        return str((state.position_food[0], state.position_food[1],state.touche,state.objs))
     
 # Fonction pour afficher le score sur l'écran
 def show_score(choice, color, font, size, score):
@@ -181,7 +259,7 @@ def draw_bombs(bombs):
     for bomb in bombs:
         pygame.draw.rect(window, BLUE, pygame.Rect(bomb[0], bomb[1], BLOCK_SIZE, BLOCK_SIZE))
     
-def game_loop():
+def game_loop(learner):
     game_over = False
     duree = 0
     # Configuration de la fenêtre
@@ -308,24 +386,76 @@ def game_loop():
         clock.tick(vitesse_du_jeu)
     return score, reason
 
-
-game_count = 1
-learner = Learner(WIDTH, HEIGHT, BLOCK_SIZE)
-
-while game_count <= max_partie:
-    learner.reset()
-    if game_count > max_partie / 2:
-        learner.epsilon = 0  
-    else:
-        learner.epsilon = .2
-    score, reason = game_loop()
-    print(f"Games: {game_count}; Score: {score}; Reason: {reason}") 
-    if game_count == max_partie:
-        print("Q_values after the last game:")
-        for state, values in q_values.states.items():
-            print(f"State: {state}, Q-values: {values}") 
-    game_count += 1
+def experience(Nreps, epsilon_list, lr_list, discount_list, rewards_game_over, rewards_food, rewards_bomb, rewards_good_move, rewards_bad_move):
+    results = {}
+    print(len(epsilon_list)*len(lr_list)*len(discount_list)*len(rewards_game_over)*len(rewards_food)*len(rewards_bomb)*len(rewards_good_move)*len(rewards_bad_move))
+    for epsilon, lr, discount,reward_game_over,reward_food, reward_bomb,reward_good_move,reward_bad_move in product(epsilon_list, lr_list, discount_list,rewards_game_over, rewards_food, rewards_bomb, rewards_good_move, rewards_bad_move):
+        result = run_experiment(Nreps, epsilon, lr, discount,reward_game_over,reward_food,reward_bomb,reward_good_move,reward_bad_move)
+        results[(epsilon, lr, discount,reward_game_over,reward_food,reward_bomb,reward_good_move,reward_bad_move)] = result
+    return results
 
 
 
+def experience_multi(Nreps, epsilon_list, lr_list, discount_list, rewards_game_over, rewards_food, rewards_bomb, rewards_good_move, rewards_bad_move):
+    results = {}
+    pool = Pool(processes=(cpu_count()-1))
+    hyperparams_combinations = product(epsilon_list, lr_list, discount_list, rewards_game_over, rewards_food, rewards_bomb, rewards_good_move, rewards_bad_move)
+    for epsilon, lr, discount, reward_game_over, reward_food, reward_bomb, reward_good_move, reward_bad_move in hyperparams_combinations:
+        result = pool.apply_async(run_experiment, args=(Nreps, epsilon, lr, discount, reward_game_over, reward_food, reward_bomb, reward_good_move, reward_bad_move))
+        results[(epsilon, lr, discount, reward_game_over, reward_food, reward_bomb, reward_good_move, reward_bad_move)] = result
+    pool.close()
+    pool.join()
+    results = {key: result.get() for key, result in results.items()}
+    return results
+
+def run_experiment(Nreps, epsilon, lr, discount,reward_game_over,reward_food,reward_bomb,reward_good_move,reward_bad_move, affichage = False):
+    game_count = 1
+    learner = Learner(WIDTH, HEIGHT, BLOCK_SIZE)
+    learner.lr = lr
+    learner.discount = discount
+    learner.reward_game_over = reward_game_over
+    learner.reward_food = reward_food
+    learner.reward_bomb = reward_bomb
+    learner.reward_good_move = reward_good_move
+    learner.reward_bad_move = reward_bad_move
+    scores = []
+    while game_count <= Nreps:
+        learner.reset()
+        if game_count > Nreps / 2:
+            learner.epsilon = 0
+        else:
+            learner.epsilon = epsilon
+        score, reason = game_loop(learner)
+        if game_count > Nreps / 2:
+            scores.append(score)
+        if affichage:
+            print(f"Games: {game_count}; Score: {score}; Reason: {reason}") 
+        game_count += 1
+    return np.mean(scores)
+
+if multi_coeur:
+    res = experience_multi(Nreps=Nreps,
+                 epsilon_list=epsilon_list,
+                 lr_list=lr_list,
+                 discount_list=discount_list,
+                 rewards_game_over=rewards_game_over,
+                 rewards_food=rewards_food,
+                 rewards_bomb=rewards_bomb,
+                 rewards_good_move=rewards_good_move,
+                 rewards_bad_move=rewards_bad_move)
+else:
+    res = experience(Nreps=Nreps,
+                 epsilon_list=epsilon_list,
+                 lr_list=lr_list,
+                 discount_list=discount_list,
+                 rewards_game_over=rewards_game_over,
+                 rewards_food=rewards_food,
+                 rewards_bomb=rewards_bomb,
+                 rewards_good_move=rewards_good_move,
+                 rewards_bad_move=rewards_bad_move)
+    
+
+key_max = max(res, key=res.get)
+print("Clé associée au meilleur score moyen:", key_max)
+print("score associé:", res[key_max])
 
