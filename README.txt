@@ -1,6 +1,10 @@
-Projet snake
+Projet apprentissage par renforcement
 
 Julien, Eric, Maxence, Lucas, Lucas
+
+###############
+
+Ce projet consistait à créer un agent capable d'apprendre à jouer à une version légèrement complexifiée du jeu snake, en se basant sur le Q-learning.
 
 Règles du jeu :
 ###############
